@@ -6,7 +6,6 @@ REGION="us-central1"
 ZONE="us-central1-a"
 BUCKET_NAME="bu-cs528-architkk"
 DB_INSTANCE="hw5-db"
-DB_HOST="34.57.20.253"
 DB_NAME="hw5"
 
 echo "========================================"
@@ -41,7 +40,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:${SA_EMAIL}" \
-    --role="roles/cloudsql.client" --quiet
+    --role="roles/cloudsql.admin" --quiet
 
 # ---- Step 3: Start or create Cloud SQL ----
 echo "[3/9] Checking Cloud SQL instance..."
@@ -67,15 +66,19 @@ if [ "$DB_STATUS" = "NOTFOUND" ]; then
     pip3 install mysql-connector-python --break-system-packages -q
     DB_HOST=$DB_HOST DB_USER=root DB_PASS=hw5password123 DB_NAME=$DB_NAME \
         python3 setup_schema.py
-elif [ "$DB_STATUS" = "SUSPENDED" ] || [ "$DB_STATUS" = "STOPPED" ]; then
-    echo "Starting existing Cloud SQL instance..."
-    gcloud sql instances patch $DB_INSTANCE --activation-policy=ALWAYS --project=$PROJECT_ID
-    sleep 30
 else
-    echo "Cloud SQL already running."
+    echo "Starting existing Cloud SQL instance..."
+    gcloud sql instances patch $DB_INSTANCE \
+        --activation-policy=ALWAYS \
+        --project=$PROJECT_ID --quiet
+    sleep 30
+    DB_HOST=$(gcloud sql instances describe $DB_INSTANCE \
+        --project=$PROJECT_ID \
+        --format="value(ipAddresses[0].ipAddress)")
+    echo "Cloud SQL running. DB_HOST=$DB_HOST"
 fi
 
-# ---- Step 4: Authorize VM IP (will update after VM creation) ----
+# ---- Step 4: Reserve static IP ----
 echo "[4/9] Reserving static IP for web server..."
 gcloud compute addresses create hw5-webserver-ip \
     --region=$REGION \
@@ -108,8 +111,14 @@ FORBIDDEN_IP=$(gcloud compute instances describe hw5-forbidden-vm \
     --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
 echo "Forbidden VM IP: $FORBIDDEN_IP"
 
-# ---- Step 6: Create web server VM ----
-echo "[6/9] Creating web server VM..."
+# ---- Step 6: Authorize IPs in Cloud SQL ----
+echo "[6/9] Authorizing IPs in Cloud SQL..."
+gcloud sql instances patch $DB_INSTANCE \
+    --authorized-networks=$STATIC_IP \
+    --project=$PROJECT_ID --quiet
+
+# ---- Step 7: Create web server VM ----
+echo "[7/9] Creating web server VM..."
 gcloud compute instances create hw5-webserver-vm \
     --zone=$ZONE \
     --machine-type=e2-medium \
@@ -122,12 +131,6 @@ gcloud compute instances create hw5-webserver-vm \
     --metadata-from-file startup-script=startup.sh \
     --tags=http-server \
     --project=$PROJECT_ID 2>/dev/null || echo "Web server VM already exists, continuing..."
-
-# ---- Step 7: Authorize VM IP in Cloud SQL ----
-echo "[7/9] Authorizing VM IP in Cloud SQL..."
-gcloud sql instances patch $DB_INSTANCE \
-    --authorized-networks=$STATIC_IP,35.227.43.104 \
-    --project=$PROJECT_ID --quiet
 
 # ---- Step 8: Firewall rules ----
 echo "[8/9] Creating firewall rules..."
@@ -148,6 +151,7 @@ gcloud compute instances create hw5-client-vm \
     --machine-type=e2-medium \
     --image-family=debian-12 \
     --image-project=debian-cloud \
+    --metadata-from-file startup-script=startup_client.sh \
     --service-account=$SA_EMAIL \
     --scopes=cloud-platform \
     --project=$PROJECT_ID 2>/dev/null || echo "Client VM already exists, continuing..."
