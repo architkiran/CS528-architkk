@@ -154,5 +154,12 @@ gsutil cat gs://$BUCKET/hw6/model2_income_predictions.txt 2>/dev/null | head -20
 
 echo ""
 echo "========================================"
+# ---- Cleanup: delete VM and stop DB ----
+echo "Deleting VM: $VM_NAME..."
+gcloud compute instances delete $VM_NAME --zone=$ZONE --quiet 2>/dev/null || echo "  VM already deleted."
+echo "Stopping Cloud SQL: $DB_INSTANCE..."
+gcloud sql instances patch $DB_INSTANCE --activation-policy=NEVER --quiet
+echo ""
+
 echo "HW6 Setup Complete!"
 echo "========================================"
