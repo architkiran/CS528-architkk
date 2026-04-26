@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hw9-webserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hw9-webserver
+  template:
+    metadata:
+      labels:
+        app: hw9-webserver
+    spec:
+      containers:
+      - name: hw9-webserver
+        image: PLACEHOLDER_IMAGE
+        ports:
+        - containerPort: 8080
+        env:
+        - name: BUCKET_NAME
+          value: "bu-cs528-architkk"
+        - name: FORBIDDEN_SERVICE_URL
+          value: "PLACEHOLDER_FORBIDDEN_URL"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hw9-webserver-svc
+spec:
+  type: LoadBalancer
+  selector:
+    app: hw9-webserver
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
